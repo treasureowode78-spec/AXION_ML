@@ -41,7 +41,8 @@ def main() -> None:
     if config.retrain or not model.exists():
         logger.info("Training new model using %s symbols", config.training_pairs)
         symbols = client.get_top_symbols(limit=config.training_pairs)
-        data_dir = Path("data")
+        root = Path(__file__).resolve().parents[2]
+        data_dir = root / "data"
         frames = list(
             load_or_download_history(
                 symbols,

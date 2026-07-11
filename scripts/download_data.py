@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbols-file", default=None, help="Optional file with one symbol per line")
     parser.add_argument("--training-pairs", type=int, default=80, help="Number of top symbols to fetch")
     parser.add_argument("--lookback-bars", type=int, default=500, help="Number of bars to download per symbol")
-    parser.add_argument("--data-dir", default="data", help="Directory to save cached CSV files")
+    parser.add_argument("--data-dir", default="forex/data", help="Directory to save cached CSV files")
     parser.add_argument("--api-key", default=None, help="Exchange API key")
     parser.add_argument("--api-secret", default=None, help="Exchange API secret")
     parser.add_argument("--api-base-url", default=None, help="Optional exchange API base URL")

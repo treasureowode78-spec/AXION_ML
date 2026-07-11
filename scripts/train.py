@@ -74,7 +74,7 @@ def main() -> int:
         symbols = client.get_top_symbols(limit=args.training_pairs)
         logger.info("Loaded %d candidate symbols", len(symbols))
 
-        data_dir = root / "data"
+        data_dir = root / "forex" / "data"
         frames = list(
             load_or_download_history(
                 symbols,

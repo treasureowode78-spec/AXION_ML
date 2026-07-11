@@ -122,9 +122,14 @@ def ensure_data_directory(data_dir: Path) -> Path:
     return data_dir
 
 
+def _normalize_symbol_for_cache(symbol: str) -> str:
+    normalized = "".join(ch for ch in symbol.upper() if ch.isalnum())
+    return normalized or symbol.replace("/", "_").replace(" ", "_")
+
+
 def symbol_cache_path(symbol: str, interval: str, data_dir: Path) -> Path:
-    sanitized = symbol.replace("/", "_").replace(" ", "_")
-    return data_dir / f"{sanitized}_{interval}.csv"
+    normalized = _normalize_symbol_for_cache(symbol)
+    return data_dir / f"{normalized}_{interval}.csv"
 
 
 def _load_csv(path: Path) -> Optional[pd.DataFrame]:
@@ -202,24 +207,30 @@ def load_or_download_history(
     cached = load_all_cached_history(interval, data_dir)
     if cached:
         logger.info("Loaded %d symbol histories from cache at %s", len(cached), data_dir)
-        if api_key and symbols:
-            missing = [symbol for symbol in symbols if symbol not in cached]
-            if missing:
-                try:
-                    downloaded = download_and_cache_history(
-                        missing,
-                        interval,
-                        limit,
-                        data_dir,
-                        api_key=api_key,
-                        api_secret=api_secret,
-                        api_base_url=api_base_url,
-                        max_workers=max_workers,
-                    )
-                    cached.update(downloaded)
-                except Exception as exc:
-                    logger.warning("Unable to download missing symbols; continuing with cached data: %s", exc)
-        return cached
+        normalized_symbols = {symbol: _normalize_symbol_for_cache(symbol) for symbol in symbols}
+        requested: Dict[str, pd.DataFrame] = {
+            symbol: cached[norm]
+            for symbol, norm in normalized_symbols.items()
+            if norm in cached
+        }
+
+        missing = [symbol for symbol, norm in normalized_symbols.items() if norm not in cached]
+        if missing and api_key:
+            try:
+                downloaded = download_and_cache_history(
+                    missing,
+                    interval,
+                    limit,
+                    data_dir,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    api_base_url=api_base_url,
+                    max_workers=max_workers,
+                )
+                requested.update(downloaded)
+            except Exception as exc:
+                logger.warning("Unable to download missing symbols; continuing with cached data: %s", exc)
+        return requested
 
     if not api_key:
         logger.warning("No cached history available at %s and no API credentials provided", data_dir)
