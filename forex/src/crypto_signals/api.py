@@ -11,7 +11,6 @@ from requests.exceptions import ConnectionError, HTTPError, RequestException, Ti
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_API_BASE_URL = "https://api.binance.com"
 RETRYABLE_STATUS_CODES = {403, 429, 451}
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 1.0
@@ -90,76 +89,6 @@ class BaseExchangeClient(ABC):
 
     def safe_sleep(self, pause_seconds: float = 0.2) -> None:
         time.sleep(pause_seconds)
-
-
-class BinanceExchangeClient(BaseExchangeClient):
-    name = "Binance"
-    BASE_URL = DEFAULT_API_BASE_URL
-
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
-        timeout: int = 15,
-        base_url: Optional[str] = None,
-        auth_headers: Optional[Dict[str, str]] = None,
-    ) -> None:
-        super().__init__(api_key=api_key, api_secret=api_secret, timeout=timeout, base_url=base_url or self.BASE_URL, auth_headers=auth_headers)
-        if auth_headers:
-            self.session.headers.update(auth_headers)
-        elif self.api_key:
-            self.session.headers["X-MBX-APIKEY"] = self.api_key
-
-    def _normalized_symbol(self, symbol: str) -> str:
-        return symbol.replace("_", "") if "_" in symbol and symbol.endswith("USDT") else symbol
-
-    def get_top_symbols(self, limit: int = 300) -> List[str]:
-        payload = self._request("GET", f"{self.base_url}/api/v3/ticker/24hr")
-        filtered = [
-            ticker
-            for ticker in payload
-            if ticker.get("symbol", "").endswith("USDT") and float(ticker.get("quoteVolume", 0)) > 10_000
-        ]
-        filtered.sort(key=lambda item: float(item.get("quoteVolume", 0)), reverse=True)
-        return [item["symbol"] for item in filtered[:limit]]
-
-    def get_exchange_symbols(self) -> List[str]:
-        info = self._request("GET", f"{self.base_url}/api/v3/exchangeInfo")
-        return [
-            symbol["symbol"]
-            for symbol in info.get("symbols", [])
-            if symbol.get("status") == "TRADING"
-            and symbol.get("quoteAsset") == "USDT"
-            and symbol.get("isSpotTradingAllowed", True)
-        ]
-
-    def get_klines(self, symbol: str, interval: str = "15m", limit: int = 500) -> pd.DataFrame:
-        symbol = self._normalized_symbol(symbol)
-        payload = self._request(
-            "GET",
-            f"{self.base_url}/api/v3/klines",
-            params={"symbol": symbol, "interval": interval, "limit": limit},
-        )
-        frame = pd.DataFrame(
-            payload,
-            columns=[
-                "open_time",
-                "Open",
-                "High",
-                "Low",
-                "Close",
-                "Volume",
-                "close_time",
-                "quote_asset_volume",
-                "number_of_trades",
-                "taker_buy_base_asset_volume",
-                "taker_buy_quote_asset_volume",
-                "ignore",
-            ],
-        )
-        frame["Date"] = pd.to_datetime(frame["open_time"], unit="ms")
-        frame = frame[["Date", "Open", "High", "Low", "Close", "Volume"]]
-        return frame.astype({"Open": float, "High": float, "Low": float, "Close": float, "Volume": float})
 
 
 class MEXCExchangeClient(BaseExchangeClient):
@@ -291,7 +220,6 @@ class ProviderManager:
     ) -> List[BaseExchangeClient]:
         return [
             MEXCExchangeClient(api_key=api_key, api_secret=api_secret, timeout=timeout, auth_headers=auth_headers),
-            BinanceExchangeClient(api_key=api_key, api_secret=api_secret, timeout=timeout, base_url=base_url, auth_headers=auth_headers),
             CoinGeckoExchangeClient(api_key=api_key, timeout=timeout, auth_headers=auth_headers),
         ]
 

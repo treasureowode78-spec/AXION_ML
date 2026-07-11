@@ -42,12 +42,12 @@ def test_get_top_symbols_uses_mexc_primary_provider(monkeypatch):
     assert symbols == ["BTC_USDT"]
 
 
-def test_provider_failover_switches_to_binance_on_mexc_http_451(monkeypatch):
+def test_provider_failover_switches_to_coingecko_on_mexc_http_451(monkeypatch):
     sequence = iter([
         (451, {}),
         (451, {}),
         (451, {}),
-        (200, [{"symbol": "ETHUSDT", "quoteVolume": "15000"}]),
+        (200, {"coins": [{"item": {"id": "ethereum"}}]}),
     ])
     monkeypatch.setattr("src.crypto_signals.api.time.sleep", lambda _: None)
     monkeypatch.setattr(requests.Session, "request", fake_request_factory(sequence))
@@ -55,13 +55,13 @@ def test_provider_failover_switches_to_binance_on_mexc_http_451(monkeypatch):
     client = ExchangeClient(api_key="mexc-key", api_secret="mexc-secret")
     symbols = client.get_top_symbols(limit=1)
 
-    assert symbols == ["ETHUSDT"]
+    assert symbols == ["ethereum"]
 
 
-def test_timeout_on_mexc_falls_back_to_binance(monkeypatch):
+def test_timeout_on_mexc_falls_back_to_coingecko(monkeypatch):
     sequence = iter([
         "timeout",
-        (200, [{"symbol": "BTCUSDT", "quoteVolume": "20000"}]),
+        (200, {"coins": [{"item": {"id": "bitcoin"}}]}),
     ])
     monkeypatch.setattr("src.crypto_signals.api.time.sleep", lambda _: None)
     monkeypatch.setattr(requests.Session, "request", fake_request_factory(sequence))
@@ -69,7 +69,7 @@ def test_timeout_on_mexc_falls_back_to_binance(monkeypatch):
     client = ExchangeClient(api_key="mexc-key", api_secret="mexc-secret")
     symbols = client.get_top_symbols(limit=1)
 
-    assert symbols == ["BTCUSDT"]
+    assert symbols == ["bitcoin"]
 
 
 def test_retry_logic_on_mexc_retries_before_success(monkeypatch):
@@ -109,5 +109,5 @@ def test_provider_error_contains_all_failed_providers(monkeypatch):
 
     message = str(excinfo.value)
     assert "MEXC" in message
-    assert "Binance" in message
     assert "CoinGecko" in message
+    assert "Binance" not in message

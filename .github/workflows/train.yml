@@ -48,7 +48,7 @@ jobs:
 
       - name: Create artifact directories
         run: |
-          mkdir -p models reports logs
+          mkdir -p models reports logs forex/data
 
       - name: Determine training week
         id: week
@@ -61,6 +61,14 @@ jobs:
               fh.write(f"week_even={str(even).lower()}\n")
           print(f"Training will run in even weeks only. Week {today.isocalendar()[1]} even={even}")
           PY
+
+      - name: Download cached market data
+        run: |
+          python scripts/download_data.py \
+            --training-pairs 40 \
+            --lookback-bars 500 \
+            --data-dir forex/data \
+            --log-file logs/download_data.log
 
       - name: Run training
         if: github.event_name == 'workflow_dispatch' || github.event.inputs.force_train == 'true' || (github.event_name == 'schedule' && steps.week.outputs.week_even == 'true')
