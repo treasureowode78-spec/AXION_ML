@@ -13,7 +13,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from src.crypto_signals.api import ExchangeClient
 from src.crypto_signals.backtest import backtest_model
-from src.crypto_signals.data import load_history_for_symbols
+from src.crypto_signals.data import load_or_download_history
 from src.crypto_signals.model import SignalModel
 
 
@@ -86,11 +86,13 @@ def main() -> int:
         symbols = client.get_top_symbols(limit=args.training_pairs)
         logger.info("Loaded %d candidate symbols for backtest", len(symbols))
 
+        data_dir = root / "data"
         frames = list(
-            load_history_for_symbols(
+            load_or_download_history(
                 symbols,
                 interval=args.timeframe,
                 limit=args.lookback_bars,
+                data_dir=data_dir,
                 api_key=args.api_key,
                 api_secret=args.api_secret,
                 api_base_url=args.api_base_url,

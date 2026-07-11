@@ -6,7 +6,7 @@ from pathlib import Path
 from src.crypto_signals.api import ExchangeClient
 from src.crypto_signals.backtest import backtest_model
 from src.crypto_signals.config import Config
-from src.crypto_signals.data import load_data, load_history_for_symbols
+from src.crypto_signals.data import load_data, load_or_download_history
 from src.crypto_signals.logger import setup_logger
 from src.crypto_signals.model import SignalModel
 from src.crypto_signals.scanner import ScannerConfig, SignalScanner
@@ -41,11 +41,13 @@ def main() -> None:
     if config.retrain or not model.exists():
         logger.info("Training new model using %s symbols", config.training_pairs)
         symbols = client.get_top_symbols(limit=config.training_pairs)
+        data_dir = Path("data")
         frames = list(
-            load_history_for_symbols(
+            load_or_download_history(
                 symbols,
                 interval=config.timeframe,
                 limit=config.lookback_bars,
+                data_dir=data_dir,
                 api_key=config.api_key,
                 api_secret=config.api_secret,
                 api_base_url=config.api_base_url,
