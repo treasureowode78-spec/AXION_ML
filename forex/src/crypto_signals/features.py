@@ -112,7 +112,7 @@ def compute_supertrend(frame: pd.DataFrame, atr_multiplier: float = 3.0, atr_win
 
         supertrend.iat[i] = final_lower.iat[i] if direction > 0 else final_upper.iat[i]
 
-    return supertrend.fillna(method="ffill").fillna(frame["Close"])
+    return supertrend.ffill().fillna(frame["Close"])
 
 
 def compute_macd(frame: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:

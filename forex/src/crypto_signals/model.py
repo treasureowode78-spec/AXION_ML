@@ -80,8 +80,6 @@ class SignalModel:
             X_train,
             y_train,
             model__sample_weight=sample_weights,
-            model__eval_set=[(X_val, y_val)],
-            model__early_stopping_rounds=20,
             model__verbose=False,
         )
 
