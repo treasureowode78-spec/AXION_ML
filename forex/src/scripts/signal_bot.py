@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_DIR))
@@ -24,10 +25,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-file", default="logs/signal_scan.log", help="Path to save scan log")
     parser.add_argument("--api-key", default=None, help="MEXC API key")
     parser.add_argument("--api-secret", default=None, help="MEXC API secret")
+    parser.add_argument("--model-path", default=None, help="Optional path to a trained model file")
     parser.add_argument("--telegram-token", default=None, help="Telegram bot token")
     parser.add_argument("--telegram-channel-id", default=None, help="Telegram channel ID")
+    parser.add_argument("--telegram-chat-id", default=None, help="Telegram chat ID")
     parser.add_argument("--telegram-user-id", default=None, help="Telegram user ID")
     return parser.parse_args()
+
+
+def resolve_model_path(root: Path, explicit_path: Optional[str] = None) -> Optional[Path]:
+    """Resolve the most suitable model file from the workspace."""
+    candidate_paths = []
+    if explicit_path:
+        explicit = Path(explicit_path).expanduser()
+        candidate_paths.append(explicit if explicit.is_absolute() else root / explicit)
+
+    candidate_paths.extend(
+        [
+            root / "models" / "signal_model.pkl",
+            root / "models" / "crypto_signal_v1.joblib",
+            root / "signal_model.pkl",
+            root / "crypto_signal_v1.joblib",
+        ]
+    )
+
+    for candidate in candidate_paths:
+        if candidate.exists():
+            return candidate
+
+    if explicit_path:
+        explicit = Path(explicit_path).expanduser()
+        return explicit if explicit.is_absolute() else root / explicit
+
+    return None
 
 
 def main() -> int:
@@ -39,13 +69,17 @@ def main() -> int:
 
     logger.info("Starting hourly market scan...")
 
-    model_path = root / "models" / "signal_model.pkl"
+    model_path = resolve_model_path(root, args.model_path)
+    if model_path is None:
+        logger.warning("No trained model found; checked common model locations")
+        return 0
+
     model = SignalModel(model_path=str(model_path))
     if not model.exists() or not model.load():
         logger.warning("Trained model not found at %s - skipping scan", model_path)
         return 0
 
-    logger.info("Loaded trained model.")
+    logger.info("Loaded trained model from %s.", model_path)
 
     client = MEXCExchangeClient(api_key=args.api_key, api_secret=args.api_secret)
 
@@ -76,7 +110,13 @@ def main() -> int:
         logger.info("Signal: %s %s (%.1f%%)", signal.pair, signal.direction, signal.confidence_score)
 
     telegram_token = args.telegram_token or os.getenv("TELEGRAM_TOKEN") or os.getenv("TG_BOT_TOKEN")
-    telegram_channel_id = args.telegram_channel_id or os.getenv("TELEGRAM_CHANNEL_ID") or os.getenv("TELEGRAM_CHANNEL")
+    telegram_channel_id = (
+        args.telegram_channel_id
+        or os.getenv("TELEGRAM_CHANNEL_ID")
+        or os.getenv("TELEGRAM_CHANNEL")
+        or args.telegram_chat_id
+        or os.getenv("TELEGRAM_CHAT_ID")
+    )
     telegram_user_id = args.telegram_user_id or os.getenv("TELEGRAM_USER_ID")
     message = format_telegram_message(signals)
 

@@ -46,6 +46,7 @@ jobs:
           FALLBACK_SECRET: ${{ secrets.API_SECRET }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
         run: |
           KEY="${API_KEY:-${FALLBACK_KEY}}"
@@ -55,8 +56,10 @@ jobs:
             --scan-limit 80 \
             --lookback-bars 500 \
             --log-file logs/signal_scan.log \
+            --model-path "models/crypto_signal_v1.joblib" \
             --api-key "$KEY" \
             --api-secret "$SECRET" \
             --telegram-token "$TELEGRAM_TOKEN" \
             --telegram-channel-id "$TELEGRAM_CHANNEL_ID" \
+            --telegram-chat-id "$TELEGRAM_CHAT_ID" \
             --telegram-user-id "$TELEGRAM_USER_ID" || true
