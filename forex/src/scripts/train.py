@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-PROJECT_DIR = Path(__file__).resolve().parents[1] / "forex"
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_DIR))
 
 from src.crypto_signals.api import ExchangeClient
@@ -63,7 +63,7 @@ def parse_smc_features(value: Optional[str]) -> List[str]:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     log_path = root / args.log_file
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = setup_logger(log_path)

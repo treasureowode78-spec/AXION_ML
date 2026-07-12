@@ -1,0 +1,70 @@
+name: Signal Bot - Hourly Market Scan
+
+on:
+  schedule:
+    # Run every hour at minute 0
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  signal_scan:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/forex/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f forex/requirements.txt ]; then python -m pip install -r forex/requirements.txt; fi
+
+      - name: Check if trained model exists
+        run: |
+          if [ ! -f models/signal_model.pkl ]; then
+            echo "WARNING: Trained model not found at models/signal_model.pkl"
+            echo "The signal scan will skip gracefully."
+          else
+            echo "Trained model found. Proceeding with signal scan."
+          fi
+
+      - name: Run hourly signal scan
+        env:
+          API_KEY: ${{ secrets.MEXC_API_KEY || secrets.API_KEY }}
+          API_SECRET: ${{ secrets.MEXC_API_SECRET || secrets.API_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+        run: |
+          python forex/src/scripts/signal_bot.py \
+            --timeframe 15m \
+            --scan-limit 80 \
+            --lookback-bars 500 \
+            --log-file logs/signal_scan.log \
+            --api-key "$API_KEY" \
+            --api-secret "$API_SECRET" \
+            --telegram-token "$TELEGRAM_TOKEN" \
+            --telegram-channel-id "$TELEGRAM_CHANNEL_ID" \
+            --telegram-user-id "$TELEGRAM_USER_ID"
+
+      - name: Upload logs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-scan-logs-${{ github.run_id }}
+          path: logs/signal_scan.log
+          retention-days: 30
