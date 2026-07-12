@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import argparse
-import json
-import logging
+import os
 import sys
 from pathlib import Path
-from typing import List
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_DIR))
 
 from src.crypto_signals.api import MEXCExchangeClient
+from src.crypto_signals.logger import setup_logger
 from src.crypto_signals.model import SignalModel
 from src.crypto_signals.scanner import ScannerConfig, SignalScanner
-from src.crypto_signals.logger import setup_logger
+from src.crypto_signals.signals import format_telegram_message
+from src.crypto_signals.telegram import TelegramConfig, TelegramNotifier
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-file", default="logs/signal_scan.log", help="Path to save scan log")
     parser.add_argument("--api-key", default=None, help="MEXC API key")
     parser.add_argument("--api-secret", default=None, help="MEXC API secret")
+    parser.add_argument("--telegram-token", default=None, help="Telegram bot token")
+    parser.add_argument("--telegram-channel-id", default=None, help="Telegram channel ID")
+    parser.add_argument("--telegram-user-id", default=None, help="Telegram user ID")
     return parser.parse_args()
 
 
@@ -44,7 +47,6 @@ def main() -> int:
 
     logger.info("Loaded trained model.")
 
-    # Use MEXC client directly to ensure MEXC-only connection
     client = MEXCExchangeClient(api_key=args.api_key, api_secret=args.api_secret)
 
     try:
@@ -68,9 +70,35 @@ def main() -> int:
 
     if not signals:
         logger.info("No actionable signals found.")
-    else:
-        for s in signals:
-            logger.info("Signal: %s %s (%.1f%%)", s.pair, s.direction, s.confidence * 100.0)
+        return 0
+
+    for signal in signals:
+        logger.info("Signal: %s %s (%.1f%%)", signal.pair, signal.direction, signal.confidence_score)
+
+    telegram_token = args.telegram_token or os.getenv("TELEGRAM_TOKEN") or os.getenv("TG_BOT_TOKEN")
+    telegram_channel_id = args.telegram_channel_id or os.getenv("TELEGRAM_CHANNEL_ID") or os.getenv("TELEGRAM_CHANNEL")
+    telegram_user_id = args.telegram_user_id or os.getenv("TELEGRAM_USER_ID")
+    message = format_telegram_message(signals)
+
+    if telegram_token and telegram_channel_id:
+        channel_config = TelegramConfig(
+            bot_token=telegram_token,
+            channel_id=str(telegram_channel_id),
+            user_id=str(telegram_user_id or ""),
+        )
+        notifier = TelegramNotifier(channel_config)
+        channel_sent = notifier.send_signal_to_channel(message)
+        logger.info("Telegram channel send status: %s", channel_sent)
+
+    if telegram_token and telegram_user_id:
+        user_config = TelegramConfig(
+            bot_token=telegram_token,
+            channel_id=str(telegram_channel_id or ""),
+            user_id=str(telegram_user_id),
+        )
+        notifier = TelegramNotifier(user_config)
+        user_sent = notifier.send_notification_to_user("MARKET_SIGNAL", message)
+        logger.info("Telegram user send status: %s", user_sent)
 
     logger.info("Market scan completed.")
     return 0

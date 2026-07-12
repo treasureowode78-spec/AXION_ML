@@ -1,4 +1,4 @@
-name: Run AXION_ML Pipeline
+name: Run AXION_ML Scan
 
 on:
   push:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONUNBUFFERED: 1
+      PYTHONPATH: ./forex
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,57 +38,25 @@ jobs:
           python -m pip install pytest
           pytest -q forex/tests || true
 
-      - name: Optionally download market data (requires secrets)
+      - name: Run signal scan
         env:
           API_KEY: ${{ secrets.MEXC_API_KEY }}
           API_SECRET: ${{ secrets.MEXC_API_SECRET }}
           FALLBACK_KEY: ${{ secrets.API_KEY }}
           FALLBACK_SECRET: ${{ secrets.API_SECRET }}
-        run: |
-          KEY="${API_KEY:-${FALLBACK_KEY}}"
-          SECRET="${API_SECRET:-${FALLBACK_SECRET}}"
-          if [ -z "$KEY" ] || [ -z "$SECRET" ]; then
-            echo "Skipping data download: API credentials not configured"
-            exit 0
-          fi
-          python forex/src/scripts/download_data.py --api-key "$KEY" --api-secret "$SECRET" --timeframe 15m --lookback-bars 600 --training-pairs 80
-
-      - name: Train model
-        env:
-          API_KEY: ${{ secrets.MEXC_API_KEY }}
-          API_SECRET: ${{ secrets.MEXC_API_SECRET }}
-          FALLBACK_KEY: ${{ secrets.API_KEY }}
-          FALLBACK_SECRET: ${{ secrets.API_SECRET }}
-        run: |
-          KEY="${API_KEY:-${FALLBACK_KEY}}"
-          SECRET="${API_SECRET:-${FALLBACK_SECRET}}"
-          python forex/src/scripts/train.py --timeframe 15m --training-pairs 80 --lookback-bars 600 --api-key "$KEY" --api-secret "$SECRET" || true
-
-      - name: Run backtest
-        env:
-          API_KEY: ${{ secrets.MEXC_API_KEY }}
-          API_SECRET: ${{ secrets.MEXC_API_SECRET }}
-          FALLBACK_KEY: ${{ secrets.API_KEY }}
-          FALLBACK_SECRET: ${{ secrets.API_SECRET }}
-        run: |
-          KEY="${API_KEY:-${FALLBACK_KEY}}"
-          SECRET="${API_SECRET:-${FALLBACK_SECRET}}"
-          python forex/src/scripts/backtest.py --timeframe 15m --training-pairs 80 --lookback-bars 600 --api-key "$KEY" --api-secret "$SECRET" || true
-
-      - name: Send pipeline results to Telegram
-        if: always()
-        env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
         run: |
-          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHANNEL_ID" ]; then
-            echo "Skipping Telegram notification: Credentials not configured"
-            exit 0
-          fi
-          python forex/src/scripts/notify_telegram.py \
+          KEY="${API_KEY:-${FALLBACK_KEY}}"
+          SECRET="${API_SECRET:-${FALLBACK_SECRET}}"
+          python forex/src/scripts/signal_bot.py \
+            --timeframe 15m \
+            --scan-limit 80 \
+            --lookback-bars 500 \
+            --log-file logs/signal_scan.log \
+            --api-key "$KEY" \
+            --api-secret "$SECRET" \
             --telegram-token "$TELEGRAM_TOKEN" \
             --telegram-channel-id "$TELEGRAM_CHANNEL_ID" \
-            --telegram-user-id "$TELEGRAM_USER_ID" \
-            --download-report "reports/download_summary.json" \
-            --backtest-report "reports/backtest_report.json" || true
+            --telegram-user-id "$TELEGRAM_USER_ID" || true

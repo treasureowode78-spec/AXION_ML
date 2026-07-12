@@ -1,39 +1,26 @@
-name: Automated Training and Backtesting
+name: Scheduled Model Training and Telegram Report
 
 on:
-  workflow_dispatch:
-    inputs:
-      force_train:
-        description: 'Force training when manually triggered'
-        required: false
-        default: false
-        type: boolean
   schedule:
-    - cron: '0 3 * * 0'
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
-  train-and-backtest:
+  train-and-report:
     runs-on: ubuntu-latest
     env:
+      PYTHONUNBUFFERED: 1
       PYTHONPATH: ./forex
-      MODEL_PATH: models/signal_model.pkl
-      TRAINING_METRICS: reports/training_metrics.json
-      BACKTEST_REPORT: reports/backtest_report.json
-      FEATURE_IMPORTANCE: reports/feature_importance.csv
-      TRAIN_LOG: logs/training.log
-      BACKTEST_LOG: logs/backtest.log
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.11'
 
-      - name: Cache pip dependencies
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -44,65 +31,55 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r forex/requirements.txt
+          if [ -f forex/requirements.txt ]; then python -m pip install -r forex/requirements.txt; fi
 
-      - name: Create artifact directories
+      - name: Create output directories
         run: |
-          mkdir -p models reports logs forex/data
+          mkdir -p logs reports models
 
-      - name: Determine training week
-        id: week
+      - name: Train the model
+        env:
+          API_KEY: ${{ secrets.MEXC_API_KEY }}
+          API_SECRET: ${{ secrets.MEXC_API_SECRET }}
+          FALLBACK_KEY: ${{ secrets.API_KEY }}
+          FALLBACK_SECRET: ${{ secrets.API_SECRET }}
         run: |
-          python - <<'PY'
-          import datetime, os
-          today = datetime.date.today()
-          even = today.isocalendar()[1] % 2 == 0
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-              fh.write(f"week_even={str(even).lower()}\n")
-          print(f"Training will run in even weeks only. Week {today.isocalendar()[1]} even={even}")
-          PY
-
-      - name: Download cached market data
-        run: |
-          python scripts/download_data.py \
-            --training-pairs 40 \
+          KEY="${API_KEY:-${FALLBACK_KEY}}"
+          SECRET="${API_SECRET:-${FALLBACK_SECRET}}"
+          python forex/src/scripts/train.py \
+            --timeframe 15m \
+            --training-pairs 80 \
             --lookback-bars 500 \
-            --data-dir forex/data \
-            --log-file logs/download_data.log
+            --model-path models/signal_model.pkl \
+            --feature-importance reports/feature_importance.csv \
+            --metrics-file reports/training_metrics.json \
+            --log-file logs/training.log \
+            --api-key "$KEY" \
+            --api-secret "$SECRET"
 
-      - name: Run training
-        if: github.event_name == 'workflow_dispatch' || github.event.inputs.force_train == 'true' || (github.event_name == 'schedule' && steps.week.outputs.week_even == 'true')
+      - name: Send training report to admin DM
+        if: always()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
         run: |
-          python scripts/train.py \
-            --model-path "${{ env.MODEL_PATH }}" \
-            --feature-importance "${{ env.FEATURE_IMPORTANCE }}" \
-            --metrics-file "${{ env.TRAINING_METRICS }}" \
-            --log-file "${{ env.TRAIN_LOG }}"
-
-      - name: Run backtest
-        run: |
-          python scripts/backtest.py \
-            --model-path "${{ env.MODEL_PATH }}" \
-            --report-file "${{ env.BACKTEST_REPORT }}" \
-            --log-file "${{ env.BACKTEST_LOG }}"
-
-      - name: Commit updated artifacts
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add models reports logs
-          if ! git diff --cached --quiet; then
-            git commit -m "Automated model retraining and backtest update"
-            git push
-          else
-            echo "No output changes to commit."
+          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_USER_ID" ]; then
+            echo "Skipping Telegram report: credentials not configured"
+            exit 0
           fi
+          python forex/src/scripts/notify_telegram.py \
+            --telegram-token "$TELEGRAM_TOKEN" \
+            --telegram-user-id "$TELEGRAM_USER_ID" \
+            --metrics-file reports/training_metrics.json \
+            --backtest-report reports/backtest_report.json || true
 
-      - name: Upload automation artifacts
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: axion-automation-artifacts
+          name: training-report-${{ github.run_id }}
           path: |
-            models/**
-            reports/**
             logs/**
+            reports/**
+            models/**
+          retention-days: 30
